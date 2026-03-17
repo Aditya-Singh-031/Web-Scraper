@@ -3,6 +3,7 @@
 import asyncio
 import httpx
 import gzip
+import re
 from lxml import etree
 from io import BytesIO
 import csv
@@ -141,17 +142,32 @@ async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
             return None
 
 
-def parse_xml(content: bytes) -> etree._Element:
-    """Parse XML safely"""
-    return etree.parse(BytesIO(content)).getroot()
+def parse_xml(content: bytes):
+    """Parse XML with recover and HTML fallback"""
+    try:
+        parser = etree.XMLParser(recover=True, ns_clean=True)
+        return etree.fromstring(content, parser=parser)
+    except Exception:
+        return etree.HTML(content)
+
+
+def extract_loc_urls(root) -> List[str]:
+    urls = []
+    if root is None:
+        return urls
+    for elem in root.findall(".//{*}loc"):
+        if elem.text:
+            urls.append(elem.text.strip())
+    if not urls:
+        text = etree.tostring(root, encoding="unicode", method="text")
+        # fallback capture any urls in plain text
+        urls = re.findall(r"https?://[^\s<>\"']+", text)
+    return urls
 
 
 def extract_sitemap_urls(root) -> List[str]:
     """Extract sitemap URLs from sitemap index"""
-    return [
-        elem.text.strip()
-        for elem in root.findall(".//{*}loc")
-    ]
+    return extract_loc_urls(root)
 
 
 def decompress_if_needed(url: str, content: bytes) -> bytes:
@@ -164,9 +180,8 @@ def decompress_if_needed(url: str, content: bytes) -> bytes:
 def extract_part_urls(root) -> List[str]:
     """Extract URLs from sitemap"""
     urls = []
-    for elem in root.findall(".//{*}loc"):
-        url = elem.text.strip()
-        if "/oem-parts/" in url:   # filter only product pages
+    for url in extract_loc_urls(root):
+        if "/oem-parts/" in url:
             urls.append(url)
     return urls
 
