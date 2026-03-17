@@ -4,6 +4,7 @@ import asyncio
 import httpx
 import gzip
 import re
+import os
 from lxml import etree
 from io import BytesIO
 import csv
@@ -27,27 +28,36 @@ async def fetch_with_playwright(url: str) -> bytes:
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, timeout=30000)
-            # Wait for network idle or XML loaded
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                java_script_enabled=True,
+            )
+            page = await context.new_page()
+            await page.goto(url, timeout=60000)
             await page.wait_for_load_state('networkidle')
+
             content = await page.content()
+            # Wait through Cloudflare challenge if necessary
+            for _ in range(12):
+                if content.strip().startswith('<?xml') or '<loc>' in content:
+                    break
+                if 'Just a moment' not in content and 'Attention Required' not in content:
+                    break
+                await page.wait_for_timeout(1000)
+                content = await page.content()
+
             await browser.close()
-            # Save the fetched content for inspection
-            with open("playwright_fetched.html", "w", encoding="utf-8") as f:
+            with open('playwright_fetched.html', 'w', encoding='utf-8') as f:
                 f.write(content)
-            print("Fetched content saved to playwright_fetched.html")
-            # If XML, return as bytes
-            if content.strip().startswith("<?xml"):
-                return content.encode()
-            # Try to extract XML from HTML body
-            import re
+
+            if content.strip().startswith('<?xml'):
+                return content.encode('utf-8')
             xml_match = re.search(r'<\?xml.*', content, re.DOTALL)
             if xml_match:
-                return xml_match.group(0).encode()
-            # Print first 500 characters for quick inspection
-            print("First 500 chars of fetched content:\n", content[:500])
-            return content.encode()
+                return xml_match.group(0).encode('utf-8')
+            if '<loc>' in content:
+                return content.encode('utf-8')
+            return content.encode('utf-8')
     except Exception as e:
         print(f"Playwright fetch failed: {e}")
         return None
@@ -59,32 +69,6 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
 }
-
-
-
-# Playwright fallback for protected sites
-async def fetch_with_playwright(url: str) -> bytes:
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, timeout=30000)
-            # Wait for network idle or XML loaded
-            await page.wait_for_load_state('networkidle')
-            content = await page.content()
-            await browser.close()
-            # If XML, return as bytes
-            if content.strip().startswith("<?xml"):
-                return content.encode()
-            # Try to extract XML from HTML body
-            import re
-            xml_match = re.search(r'<\?xml.*', content, re.DOTALL)
-            if xml_match:
-                return xml_match.group(0).encode()
-            return content.encode()
-    except Exception as e:
-        print(f"Playwright fetch failed: {e}")
-        return None
 
 async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
     """Fetch content with retries"""
@@ -198,6 +182,8 @@ async def process_sitemap(client, url: str) -> List[str]:
 
 
 async def main():
+    os.makedirs(os.path.dirname(OUTPUT_FILE) or '.', exist_ok=True)
+
     async with httpx.AsyncClient(http2=True) as client:
 
         # Step 1: Fetch main sitemap index
@@ -224,7 +210,7 @@ async def main():
         print(f"Total unique part URLs: {len(all_urls)}")
 
         # Step 4: Save CSV
-        with open(OUTPUT_FILE, "w", newline="") as f:
+        with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(["url"])
             for url in sorted(all_urls):
