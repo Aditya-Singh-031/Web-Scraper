@@ -1,5 +1,5 @@
 import asyncio
-from curl_cffi.aio import AsyncSession
+import httpx
 import gzip
 import os
 import csv
@@ -27,7 +27,7 @@ HEADERS = {
 # -------------------------
 # FETCH (ANTI-BOT SAFE)
 # -------------------------
-async def fetch(client: AsyncSession, url: str) -> bytes:
+async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
     for attempt in range(5):
         try:
             r = await client.get(url)
@@ -104,9 +104,15 @@ async def process_sitemap(client, url: str) -> List[str]:
 async def main():
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
-    async with AsyncSession(
+    limits = httpx.Limits(
+        max_connections=20,
+        max_keepalive_connections=10
+    )
+
+    async with httpx.AsyncClient(
         headers=HEADERS,
-        impersonate="chrome120",
+        http2=True,
+        limits=limits,
         timeout=30,
         follow_redirects=True
     ) as client:
@@ -119,7 +125,7 @@ async def main():
         sitemap_urls = extract_loc_urls(root)
         print(f"Found {len(sitemap_urls)} sitemap files")
 
-        semaphore = asyncio.Semaphore(20)
+        semaphore = asyncio.Semaphore(5)
 
         async def bounded(url):
             async with semaphore:
