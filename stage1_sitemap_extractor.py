@@ -1,55 +1,54 @@
 import asyncio
-import httpx
 import gzip
 import os
 import csv
 from lxml import etree
 from io import BytesIO
 from typing import List, Set
+import tls_client
 
 SITEMAP_INDEX = "https://www.kia.parts/sitemap.xml"
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
-# 🔥 FULL BROWSER HEADERS (CRITICAL)
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Referer": "https://www.kia.parts/",
-    "Cache-Control": "no-cache",
-    "Pragma": "no-cache",
-}
+
+# -------------------------
+# TLS SESSION (REAL BROWSER)
+# -------------------------
+session = tls_client.Session(
+    client_identifier="chrome_120",  # mimics real Chrome
+    random_tls_extension_order=True
+)
 
 
 # -------------------------
-# FETCH (ANTI-BOT SAFE)
+# FETCH (BYPASS 403)
 # -------------------------
-async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
+def fetch_sync(url: str) -> bytes:
     for attempt in range(5):
         try:
-            r = await client.get(url)
+            res = session.get(url)
 
-            if r.status_code == 403:
-                raise Exception("403 Blocked")
+            if res.status_code != 200:
+                raise Exception(f"Status {res.status_code}")
 
-            r.raise_for_status()
+            content = res.content
 
-            content = r.content
-
-            # detect HTML block page
+            # detect block page
             if b"<html" in content[:500].lower():
-                raise ValueError("Blocked (HTML returned instead of XML)")
+                raise Exception("Blocked HTML")
 
             return content
 
         except Exception as e:
             print(f"[retry {attempt+1}] {url} → {e}")
-            await asyncio.sleep(2 + attempt)
+            import time
+            time.sleep(2 + attempt)
 
-    raise Exception(f"Failed to fetch sitemap: {url}")
+    raise Exception(f"Failed to fetch: {url}")
+
+
+async def fetch(url: str) -> bytes:
+    return await asyncio.to_thread(fetch_sync, url)
 
 
 # -------------------------
@@ -88,10 +87,10 @@ def extract_part_urls(root) -> List[str]:
 # -------------------------
 # PROCESS SITEMAP
 # -------------------------
-async def process_sitemap(client, url: str) -> List[str]:
+async def process_sitemap(url: str) -> List[str]:
     print(f"Processing: {url}")
 
-    content = await fetch(client, url)
+    content = await fetch(url)
     content = decompress_if_needed(url, content)
 
     root = parse_xml(content)
@@ -104,52 +103,38 @@ async def process_sitemap(client, url: str) -> List[str]:
 async def main():
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
-    limits = httpx.Limits(
-        max_connections=20,
-        max_keepalive_connections=10
-    )
+    print("Fetching main sitemap...")
 
-    async with httpx.AsyncClient(
-        headers=HEADERS,
-        http2=True,
-        limits=limits,
-        timeout=30,
-        follow_redirects=True
-    ) as client:
+    content = await fetch(SITEMAP_INDEX)
+    root = parse_xml(content)
 
-        print("Fetching main sitemap...")
+    sitemap_urls = extract_loc_urls(root)
+    print(f"Found {len(sitemap_urls)} sitemap files")
 
-        content = await fetch(client, SITEMAP_INDEX)
-        root = parse_xml(content)
+    semaphore = asyncio.Semaphore(5)
 
-        sitemap_urls = extract_loc_urls(root)
-        print(f"Found {len(sitemap_urls)} sitemap files")
+    async def bounded(url):
+        async with semaphore:
+            return await process_sitemap(url)
 
-        semaphore = asyncio.Semaphore(5)
+    tasks = [bounded(url) for url in sitemap_urls]
+    results = await asyncio.gather(*tasks)
 
-        async def bounded(url):
-            async with semaphore:
-                return await process_sitemap(client, url)
+    # flatten + deduplicate
+    all_urls: Set[str] = set()
+    for urls in results:
+        all_urls.update(urls)
 
-        tasks = [bounded(url) for url in sitemap_urls]
+    print(f"Total unique part URLs: {len(all_urls)}")
 
-        results = await asyncio.gather(*tasks)
+    # save CSV
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["url"])
+        for url in sorted(all_urls):
+            writer.writerow([url])
 
-        # flatten + deduplicate
-        all_urls: Set[str] = set()
-        for urls in results:
-            all_urls.update(urls)
-
-        print(f"Total unique part URLs: {len(all_urls)}")
-
-        # save CSV
-        with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["url"])
-            for url in sorted(all_urls):
-                writer.writerow([url])
-
-        print(f"Saved → {OUTPUT_FILE}")
+    print(f"Saved → {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
