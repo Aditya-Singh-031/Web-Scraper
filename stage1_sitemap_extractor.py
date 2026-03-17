@@ -25,36 +25,60 @@ HEADERS = {
 }
 
 
+
+# Playwright fallback for protected sites
+async def fetch_with_playwright(url: str) -> bytes:
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=30000)
+            # Wait for network idle or XML loaded
+            await page.wait_for_load_state('networkidle')
+            content = await page.content()
+            await browser.close()
+            # If XML, return as bytes
+            if content.strip().startswith("<?xml"):
+                return content.encode()
+            # Try to extract XML from HTML body
+            import re
+            xml_match = re.search(r'<\?xml.*', content, re.DOTALL)
+            if xml_match:
+                return xml_match.group(0).encode()
+            return content.encode()
+    except Exception as e:
+        print(f"Playwright fetch failed: {e}")
+        return None
+
 async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
     """Fetch content with retries"""
     for attempt in range(3):
-            try:
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Referer": "https://www.kia.parts/",
-                    "Connection": "keep-alive",
-                    "DNT": "1",
-                    "Upgrade-Insecure-Requests": "1",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1"
-                }
-                # Enable HTTP/2 and cookies
-                r = await client.get(url, headers=headers, timeout=30, http2=True)
-                r.raise_for_status()
-                return r.content
-            except Exception as e:
-                if attempt == 2:
-                    # Try Playwright fallback
-                    print("httpx failed, trying Playwright fallback...")
-                    content = await fetch_with_playwright(url)
-                    if content:
-                        return content
-                    raise e
-                await asyncio.sleep(2)
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.kia.parts/",
+                "Connection": "keep-alive",
+                "DNT": "1",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1"
+            }
+            r = await client.get(url, headers=headers, timeout=30)
+            r.raise_for_status()
+            return r.content
+        except Exception as e:
+            if attempt == 2:
+                # Try Playwright fallback
+                print("httpx failed, trying Playwright fallback...")
+                content = await fetch_with_playwright(url)
+                if content:
+                    return content
+                raise e
+            await asyncio.sleep(2)
 
     # Playwright fallback for protected sites
     async def fetch_with_playwright(url: str) -> bytes:
@@ -123,7 +147,7 @@ async def process_sitemap(client, url: str) -> List[str]:
 
 
 async def main():
-    async with httpx.AsyncClient(headers=HEADERS, http2=True) as client:
+    async with httpx.AsyncClient(http2=True) as client:
 
         # Step 1: Fetch main sitemap index
         print("Fetching sitemap index...")
