@@ -5,46 +5,41 @@ import csv
 from lxml import etree
 from io import BytesIO
 from typing import List, Set
-import httpx
+from playwright.async_api import async_playwright
 
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
-# 🔥 MANUALLY PROVIDED SITEMAPS (BYPASS BLOCKED INDEX)
+# sitemap list (same as before)
 SITEMAPS = [
-    # ppicker
     "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_0.xml.gz",
     "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_1.xml.gz",
     "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_2.xml.gz",
     "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_3.xml.gz",
 ]
 
-# add spp sitemaps (0–26)
 SITEMAPS += [
     f"https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_spp_kia_{i}.xml.gz"
     for i in range(27)
 ]
 
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Referer": "https://www.kia.parts/",
-}
-
-
 # -------------------------
-# FETCH
+# PLAYWRIGHT FETCH
 # -------------------------
-async def fetch(client, url: str) -> bytes:
+async def fetch_with_browser(context, url: str) -> bytes:
     for attempt in range(5):
         try:
-            r = await client.get(url)
+            page = await context.new_page()
 
-            if r.status_code != 200:
-                raise Exception(f"Status {r.status_code}")
+            response = await page.goto(url, timeout=60000)
 
-            return r.content
+            if not response or response.status != 200:
+                raise Exception(f"Status {response.status if response else 'None'}")
+
+            content = await response.body()
+
+            await page.close()
+            return content
 
         except Exception as e:
             print(f"[retry {attempt+1}] {url} → {e}")
@@ -74,12 +69,12 @@ def extract_urls(root) -> List[str]:
 
 
 # -------------------------
-# PROCESS SITEMAP
+# PROCESS
 # -------------------------
-async def process(client, url):
+async def process(context, url):
     print(f"Processing: {url}")
 
-    content = await fetch(client, url)
+    content = await fetch_with_browser(context, url)
     content = decompress(content)
 
     root = parse_xml(content)
@@ -92,18 +87,17 @@ async def process(client, url):
 async def main():
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
-    async with httpx.AsyncClient(
-        headers=HEADERS,
-        http2=True,
-        timeout=30,
-        follow_redirects=True
-    ) as client:
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
 
-        semaphore = asyncio.Semaphore(5)
+        # 🔥 persistent context = more human-like
+        context = await browser.new_context()
+
+        semaphore = asyncio.Semaphore(3)  # keep low for stability
 
         async def bounded(url):
             async with semaphore:
-                return await process(client, url)
+                return await process(context, url)
 
         tasks = [bounded(url) for url in SITEMAPS]
         results = await asyncio.gather(*tasks)
@@ -119,6 +113,8 @@ async def main():
             writer.writerow(["url"])
             for url in sorted(all_urls):
                 writer.writerow([url])
+
+        await browser.close()
 
         print(f"Saved → {OUTPUT_FILE}")
 
