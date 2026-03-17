@@ -1,13 +1,36 @@
-import asyncio
+import requests
 import gzip
-import os
 import csv
+import os
+import time
 from lxml import etree
 from typing import List, Set
-from playwright.async_api import async_playwright
 
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
+# 🔥 IMPORTANT: ADD cf_clearance HERE
+COOKIES = {
+    "_cfuvid": "eIJnFzoyMy8dl7LLl1kxM3i7NOnlkHxMBrXMS13wvZU-1773572410190-0.0.1.1-604800000",
+    "_dd_s": "isExpired=1&aid=9321b927-1d39-45b4-ade1-e6193aaa4a38",
+    "_sp_id.b10b": "8d8a8c3d1314433c.1773572407.4.1773713982.1773678094",
+    "vid": "2f6804168ae1e55015cf92d38376e58c",
+
+    # 🚨 YOU MUST ADD THIS
+    # "cf_clearance": "PASTE_FROM_BROWSER"
+}
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.kia.parts/",
+    "Connection": "keep-alive",
+}
+
+# -------------------------
+# SITEMAPS
+# -------------------------
 SITEMAPS = [
     "https://www.kia.parts/sitemaps/sitemap_static_0.xml",
 ]
@@ -24,21 +47,46 @@ SITEMAPS += [
 
 
 # -------------------------
-# PARSER
+# FETCH
+# -------------------------
+def fetch(url: str) -> bytes:
+    for attempt in range(5):
+        try:
+            response = requests.get(
+                url,
+                headers=HEADERS,
+                cookies=COOKIES,
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                print(f"[retry {attempt+1}] {url} → status {response.status_code}")
+                time.sleep(2)
+                continue
+
+            content = response.content
+
+            # 🚨 Detect Cloudflare block (HTML instead of XML/GZ)
+            if content[:100].lower().startswith(b"<!doctype html") or b"<html" in content[:200].lower():
+                print(f"[retry {attempt+1}] {url} → Blocked (HTML)")
+                time.sleep(3)
+                continue
+
+            return content
+
+        except Exception as e:
+            print(f"[retry {attempt+1}] {url} → {e}")
+            time.sleep(2)
+
+    raise Exception(f"Failed permanently: {url}")
+
+
+# -------------------------
+# XML PARSER
 # -------------------------
 def parse_xml(content: bytes):
-    parser = etree.XMLParser(recover=True, ns_clean=True)
-    return etree.fromstring(content, parser=parser)
-
-
-def is_gzip(content: bytes):
-    return len(content) > 2 and content[:2] == b'\x1f\x8b'
-
-
-def decompress_if_needed(content: bytes):
-    if is_gzip(content):
-        return gzip.decompress(content)
-    return content
+    parser = etree.XMLParser(recover=True)
+    return etree.fromstring(content, parser)
 
 
 def extract_urls(root) -> List[str]:
@@ -50,94 +98,56 @@ def extract_urls(root) -> List[str]:
 
 
 # -------------------------
-# 🔥 CORE FIX: REAL TAB NAVIGATION
-# -------------------------
-async def fetch_via_new_tab(context, url: str) -> bytes:
-    page = await context.new_page()
-
-    try:
-        response = await page.goto(url, timeout=60000, wait_until="domcontentloaded")
-
-        if not response:
-            raise Exception("No response")
-
-        content = await response.body()
-
-        # 🔥 detect HTML block page
-        if content.startswith(b"<!DOCTYPE") or b"<html" in content[:200].lower():
-            raise Exception("Blocked (HTML returned)")
-
-        return content
-
-    finally:
-        await page.close()
-
-
-# -------------------------
 # PROCESS
 # -------------------------
-async def process(context, url):
+def process(url):
     print(f"Processing: {url}")
 
-    for attempt in range(5):
+    content = fetch(url)
+
+    # Handle gzip safely
+    if url.endswith(".gz"):
         try:
-            content = await fetch_via_new_tab(context, url)
+            content = gzip.decompress(content)
+        except:
+            raise Exception("Invalid gzip (likely still blocked)")
 
-            content = decompress_if_needed(content)
-            root = parse_xml(content)
+    root = parse_xml(content)
+    urls = extract_urls(root)
 
-            urls = extract_urls(root)
-            print(f"→ Extracted {len(urls)} URLs")
-
-            return urls
-
-        except Exception as e:
-            print(f"[retry {attempt+1}] {url} → {e}")
-            await asyncio.sleep(3 + attempt)
-
-    print(f"❌ Failed permanently: {url}")
-    return []
+    print(f"→ Extracted {len(urls)} URLs")
+    return urls
 
 
 # -------------------------
 # MAIN
 # -------------------------
-async def main():
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+def main():
+    os.makedirs("data", exist_ok=True)
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+    all_urls: Set[str] = set()
 
-        context = await browser.new_context()
-
-        # 🔥 IMPORTANT: warm up session
-        page = await context.new_page()
-        await page.goto("https://www.kia.parts/", timeout=60000)
-        await asyncio.sleep(3)
-        await page.close()
-
-        all_urls: Set[str] = set()
-
-        # 🔥 SEQUENTIAL (VERY IMPORTANT)
-        for url in SITEMAPS:
-            urls = await process(context, url)
+    for url in SITEMAPS:
+        try:
+            urls = process(url)
             all_urls.update(urls)
 
-            # human delay
-            await asyncio.sleep(2)
+            # 🔥 small delay (important for not getting blocked again)
+            time.sleep(1.5)
 
-        print(f"\nTotal URLs: {len(all_urls)}")
+        except Exception as e:
+            print(f"❌ {e}")
 
-        with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["url"])
-            for url in sorted(all_urls):
-                writer.writerow([url])
+    print(f"\nTotal URLs: {len(all_urls)}")
 
-        await browser.close()
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["url"])
+        for url in sorted(all_urls):
+            writer.writerow([url])
 
-        print(f"Saved → {OUTPUT_FILE}")
+    print(f"Saved → {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
