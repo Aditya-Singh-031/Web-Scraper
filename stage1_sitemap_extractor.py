@@ -1,33 +1,13 @@
-import requests
+import undetected_chromedriver as uc
 import gzip
 import csv
 import os
+import time
 from lxml import etree
 from typing import List, Set
 
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
-# 🔥 YOUR REAL COOKIES (CLEANED + MERGED)
-COOKIES = {
-    "cf_clearance": "UaQp4rBrx4pKQVEweg1JQTHCteM5yYXt6cD_gKDu0CU-1773757518-1.2.1.1-H9xE71rep.2wk0W8er4QYoXXUsEsOorAEAi72DpiYiYT.lb1WjMyflzf6eUe0weziZbLZ1AQ1RThKGQGrjW2GtWz.anRDcGuZM5HBihMefcUh3g4kalQpbMryTcTqOQkK1q6UWPB8F7hRqd5_Z689k7lKiyEAUJYk4coLfPC96gSrGOStx9GQ010zgsxp9.6lo08EDtullvtC2j856ljgF.4zmttI0gQYaQPmsNGaUdWuxr9njQVL5GMWYcCDrF8me5E9UApVg47V6hov.QpYGBEuyoEtH_VAr5mtfxmWKUGveF0o0t0sSufmfwisM3YjPk_t9khnO8OLXpFBORdfw",
-    "_cfuvid": "eIJnFzoyMy8dl7LLl1kxM3i7NOnlkHxMBrXMS13wvZU-1773572410190-0.0.1.1-604800000",
-    "_dd_s": "isExpired=1&aid=9321b927-1d39-45b4-ade1-e6193aaa4a38",
-    "_sp_id.b10b": "8d8a8c3d1314433c.1773572407.4.1773713982.1773678094",
-    "vid": "2f6804168ae1e55015cf92d38376e58c",
-}
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Referer": "https://www.kia.parts/",
-}
-
-# -------------------------
-# SITEMAPS
-# -------------------------
 SITEMAPS = [
     "https://www.kia.parts/sitemaps/sitemap_static_0.xml",
 ]
@@ -42,34 +22,40 @@ SITEMAPS += [
     for i in range(27)
 ]
 
-# -------------------------
-# FETCH
-# -------------------------
-def fetch(url: str) -> bytes:
+
+def get_driver():
+    options = uc.ChromeOptions()
+    options.headless = False  # IMPORTANT
+
+    driver = uc.Chrome(options=options)
+    driver.get("https://www.kia.parts")
+
+    print("Solve CAPTCHA / wait 5 sec if needed...")
+    time.sleep(5)
+
+    return driver
+
+
+def fetch(driver, url):
     for i in range(5):
         try:
-            r = requests.get(url, headers=HEADERS, cookies=COOKIES, timeout=30)
+            driver.get(url)
+            time.sleep(2)
 
-            if r.status_code != 200:
-                print(f"[retry {i+1}] {url} → status {r.status_code}")
+            content = driver.page_source.encode()
+
+            if "<html" in content[:200].decode().lower() and "urlset" not in content.decode():
+                print(f"[retry {i+1}] Blocked page")
                 continue
 
-            # 🚨 detect bot block
-            if b"<html" in r.content[:200].lower():
-                print(f"[retry {i+1}] {url} → Blocked (HTML returned)")
-                continue
-
-            return r.content
+            return content
 
         except Exception as e:
-            print(f"[retry {i+1}] {url} → {e}")
+            print(f"[retry {i+1}] Error:", e)
 
     raise Exception("Blocked permanently")
 
 
-# -------------------------
-# XML PARSER
-# -------------------------
 def parse_xml(content: bytes):
     parser = etree.XMLParser(recover=True)
     return etree.fromstring(content, parser)
@@ -83,46 +69,46 @@ def extract_urls(root) -> List[str]:
     ]
 
 
-# -------------------------
-# MAIN
-# -------------------------
 def main():
     os.makedirs("data", exist_ok=True)
+
+    driver = get_driver()
 
     all_urls: Set[str] = set()
 
     for url in SITEMAPS:
-        print(f"Processing: {url}")
+        print("Processing:", url)
 
         try:
-            content = fetch(url)
+            content = fetch(driver, url)
 
-            # 🔥 handle gzip ONLY if real gzip
             if url.endswith(".gz"):
                 try:
                     content = gzip.decompress(content)
                 except:
-                    print("⚠️ Not gzipped, using raw content")
+                    print("⚠️ Not gzipped")
 
             root = parse_xml(content)
             urls = extract_urls(root)
 
-            print(f"→ Extracted {len(urls)} URLs")
+            print(f"→ {len(urls)} URLs")
 
             all_urls.update(urls)
 
         except Exception as e:
-            print(f"❌ Failed permanently: {url}")
+            print("❌ Failed:", url)
 
-    print(f"\nTotal URLs: {len(all_urls)}")
+    driver.quit()
+
+    print("\nTotal:", len(all_urls))
 
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["url"])
-        for url in sorted(all_urls):
-            writer.writerow([url])
+        for u in sorted(all_urls):
+            writer.writerow([u])
 
-    print(f"Saved → {OUTPUT_FILE}")
+    print("Saved →", OUTPUT_FILE)
 
 
 if __name__ == "__main__":
