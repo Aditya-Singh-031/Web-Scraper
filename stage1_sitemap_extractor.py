@@ -6,55 +6,51 @@ from lxml import etree
 from io import BytesIO
 from typing import List, Set
 import httpx
-from playwright.async_api import async_playwright
 
-SITEMAP_INDEX = "https://www.kia.parts/sitemap.xml"
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
+# 🔥 MANUALLY PROVIDED SITEMAPS (BYPASS BLOCKED INDEX)
+SITEMAPS = [
+    # ppicker
+    "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_0.xml.gz",
+    "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_1.xml.gz",
+    "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_2.xml.gz",
+    "https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_ppicker_kia_3.xml.gz",
+]
+
+# add spp sitemaps (0–26)
+SITEMAPS += [
+    f"https://www.kia.parts/sitemaps/ec2ff22bf5636da2ba256d2fe11a68d7_sitemap_spp_kia_{i}.xml.gz"
+    for i in range(27)
+]
+
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Referer": "https://www.kia.parts/",
+}
+
 
 # -------------------------
-# STEP 1: GET COOKIES VIA REAL BROWSER
-# -------------------------
-async def get_cookies():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context()
-
-        page = await context.new_page()
-        await page.goto("https://www.kia.parts/", timeout=60000)
-
-        cookies = await context.cookies()
-
-        await browser.close()
-
-        return {cookie["name"]: cookie["value"] for cookie in cookies}
-
-
-# -------------------------
-# FETCH WITH COOKIES
+# FETCH
 # -------------------------
 async def fetch(client, url: str) -> bytes:
     for attempt in range(5):
         try:
             r = await client.get(url)
 
-            if r.status_code == 403:
-                raise Exception("403 Blocked")
+            if r.status_code != 200:
+                raise Exception(f"Status {r.status_code}")
 
-            r.raise_for_status()
-
-            content = r.content
-
-            if b"<html" in content[:500].lower():
-                raise Exception("Blocked HTML")
-
-            return content
+            return r.content
 
         except Exception as e:
             print(f"[retry {attempt+1}] {url} → {e}")
             await asyncio.sleep(2 + attempt)
 
-    raise Exception(f"Failed to fetch: {url}")
+    raise Exception(f"Failed: {url}")
 
 
 # -------------------------
@@ -65,42 +61,29 @@ def parse_xml(content: bytes):
     return etree.fromstring(content, parser=parser)
 
 
-# -------------------------
-# UTIL FUNCTIONS
-# -------------------------
-def extract_loc_urls(root) -> List[str]:
+def decompress(content: bytes) -> bytes:
+    return gzip.decompress(content)
+
+
+def extract_urls(root) -> List[str]:
     return [
         elem.text.strip()
         for elem in root.findall(".//{*}loc")
-        if elem.text
+        if elem.text and "/oem-parts/" in elem.text
     ]
-
-
-def decompress_if_needed(url: str, content: bytes) -> bytes:
-    if url.endswith(".gz"):
-        return gzip.decompress(content)
-    return content
-
-
-def extract_part_urls(root) -> List[str]:
-    urls = []
-    for url in extract_loc_urls(root):
-        if "/oem-parts/" in url:
-            urls.append(url)
-    return urls
 
 
 # -------------------------
 # PROCESS SITEMAP
 # -------------------------
-async def process_sitemap(client, url: str) -> List[str]:
+async def process(client, url):
     print(f"Processing: {url}")
 
     content = await fetch(client, url)
-    content = decompress_if_needed(url, content)
+    content = decompress(content)
 
     root = parse_xml(content)
-    return extract_part_urls(root)
+    return extract_urls(root)
 
 
 # -------------------------
@@ -109,47 +92,27 @@ async def process_sitemap(client, url: str) -> List[str]:
 async def main():
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
-    print("Launching browser to get cookies...")
-    cookies = await get_cookies()
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
-        "Referer": "https://www.kia.parts/",
-    }
-
     async with httpx.AsyncClient(
-        headers=headers,
-        cookies=cookies,
+        headers=HEADERS,
         http2=True,
-        follow_redirects=True,
-        timeout=30
+        timeout=30,
+        follow_redirects=True
     ) as client:
-
-        print("Fetching sitemap index...")
-
-        content = await fetch(client, SITEMAP_INDEX)
-        root = parse_xml(content)
-
-        sitemap_urls = extract_loc_urls(root)
-        print(f"Found {len(sitemap_urls)} sitemap files")
 
         semaphore = asyncio.Semaphore(5)
 
         async def bounded(url):
             async with semaphore:
-                return await process_sitemap(client, url)
+                return await process(client, url)
 
-        tasks = [bounded(url) for url in sitemap_urls]
+        tasks = [bounded(url) for url in SITEMAPS]
         results = await asyncio.gather(*tasks)
 
-        # flatten + deduplicate
         all_urls: Set[str] = set()
         for urls in results:
             all_urls.update(urls)
 
-        print(f"Total unique part URLs: {len(all_urls)}")
+        print(f"\nTotal URLs: {len(all_urls)}")
 
         with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
