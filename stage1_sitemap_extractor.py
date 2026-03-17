@@ -1,4 +1,5 @@
 
+
 import asyncio
 import httpx
 import gzip
@@ -7,14 +8,42 @@ from io import BytesIO
 import csv
 from typing import List, Set
 
+
 # For Playwright fallback
 import sys
 import subprocess
+playwright_imported = False
 try:
     from playwright.async_api import async_playwright
+    playwright_imported = True
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright", "lxml"])
     from playwright.async_api import async_playwright
+    playwright_imported = True
+
+# Playwright fallback for protected sites
+async def fetch_with_playwright(url: str) -> bytes:
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=30000)
+            # Wait for network idle or XML loaded
+            await page.wait_for_load_state('networkidle')
+            content = await page.content()
+            await browser.close()
+            # If XML, return as bytes
+            if content.strip().startswith("<?xml"):
+                return content.encode()
+            # Try to extract XML from HTML body
+            import re
+            xml_match = re.search(r'<\?xml.*', content, re.DOTALL)
+            if xml_match:
+                return xml_match.group(0).encode()
+            return content.encode()
+    except Exception as e:
+        print(f"Playwright fetch failed: {e}")
+        return None
 
 SITEMAP_INDEX = "https://www.kia.parts/sitemap.xml"
 OUTPUT_FILE = "data/sitemap_urls.csv"
