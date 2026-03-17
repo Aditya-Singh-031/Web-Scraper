@@ -33,22 +33,25 @@ async def fetch_with_playwright(url: str) -> bytes:
                 java_script_enabled=True,
             )
             page = await context.new_page()
-            await page.goto(url, timeout=60000)
+            print(f"[playwright] visiting {url}")
+            await page.goto(url, timeout=120000, wait_until='domcontentloaded')
             await page.wait_for_load_state('networkidle')
 
             content = await page.content()
-            # Wait through Cloudflare challenge if necessary
-            for _ in range(12):
+            for i in range(20):
                 if content.strip().startswith('<?xml') or '<loc>' in content:
                     break
-                if 'Just a moment' not in content and 'Attention Required' not in content:
-                    break
-                await page.wait_for_timeout(1000)
-                content = await page.content()
+                if 'Just a moment' in content or 'Attention Required' in content:
+                    print(f"[playwright] cloudflare challenge, waiting ({i})")
+                    await page.wait_for_timeout(2000)
+                    content = await page.content()
+                    continue
+                break
 
             await browser.close()
             with open('playwright_fetched.html', 'w', encoding='utf-8') as f:
                 f.write(content)
+            print('[playwright] saved playwright_fetched.html')
 
             if content.strip().startswith('<?xml'):
                 return content.encode('utf-8')
