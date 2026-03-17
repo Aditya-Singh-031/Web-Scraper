@@ -32,6 +32,10 @@ async def fetch_with_playwright(url: str) -> bytes:
             await page.wait_for_load_state('networkidle')
             content = await page.content()
             await browser.close()
+            # Save the fetched content for inspection
+            with open("playwright_fetched.html", "w", encoding="utf-8") as f:
+                f.write(content)
+            print("Fetched content saved to playwright_fetched.html")
             # If XML, return as bytes
             if content.strip().startswith("<?xml"):
                 return content.encode()
@@ -40,6 +44,8 @@ async def fetch_with_playwright(url: str) -> bytes:
             xml_match = re.search(r'<\?xml.*', content, re.DOTALL)
             if xml_match:
                 return xml_match.group(0).encode()
+            # Print first 500 characters for quick inspection
+            print("First 500 chars of fetched content:\n", content[:500])
             return content.encode()
     except Exception as e:
         print(f"Playwright fetch failed: {e}")
