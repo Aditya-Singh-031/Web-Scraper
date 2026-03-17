@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<!-- saved from url=(1317)https://www.paypal.com/credit-presentment/smart/message?merchant_id=LGNGHRPLUN6FA&currency=USD&amount=37.16&channel=UPSTREAM&features=native-modal&page_type=product&style=%7B%22layout%22%3A%22text%22%2C%22color%22%3A%22white-no-border%22%2C%22ratio%22%3A%2220x1%22%2C%22logo%22%3A%7B%22position%22%3A%22top%22%7D%7D&client_id=AdOPU3IZIa_fjuYJ5ciZjpWzyo6V7UENFUundSYKRqDYqhQ2vxNst4EbXvo65-x_hgwC-qWW_ezrG9oP&merchant_config=551f5a583ed15c77fbbb150b46f146c1fd95ea17&treatments=9e6ccd1946b3e905bd49d812b19a77217d830b65&sdkMeta=eyJ1cmwiOiJodHRwczovL3d3dy5wYXlwYWwuY29tL3Nkay9qcz9jbGllbnQtaWQ9QWRPUFUzSVpJYV9manVZSjVjaVpqcFd6eW82VjdVRU5GVXVuZFNZS1JxRFlxaFEydnhOc3Q0RWJYdm82NS14X2hnd0MtcVdXX2V6ckc5b1AmbWVyY2hhbnQtaWQ9TEdOR0hSUExVTjZGQSZjdXJyZW5jeT1VU0QmaW50ZW50PWF1dGhvcml6ZSZjb21wb25lbnRzPW1lc3NhZ2VzLGJ1dHRvbnMsYXBwbGVwYXksZ29vZ2xlcGF5JmVuYWJsZS1mdW5kaW5nPXBheWxhdGVyLHZlbm1vLGNyZWRpdCZkaXNhYmxlLWZ1bmRpbmc9Y2FyZCIsImF0dHJzIjp7ImRhdGEtcGFydG5lci1hdHRyaWJ1dGlvbi1pZCI6IlJldnBhcnRzX1NQIiwiZGF0YS11aWQiOiJ1aWRfcnN1emJibHpodW1rY2Vxa3Fra3hwdWt4cHdvenBhIn19&env=production&version=1.79.0&integrationType=SDK&deviceID=uid_34c0301e50_mte6mda6mdc&sessionID=uid_54718bef0c_mdi6mdu6mzq&scriptUID=uid_rsuzbblzhumkceqkqkkxpukxpwozpa&message_request_id=uid_38278d1e9d_mdi6mdk6mzq&partnerAttributionId=Revparts_SP&disableSetCookie=true -->
+<html lang="en-US"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+                        <title>PayPal</title>
+                        <meta name="viewport" content="width=device-width, initial-scale=1">
+                    </head>
+                    <body>
+                        <script data-uid="uid_rsuzbblzhumkceqkqkkxpukxpwozpa">(function createSdkScript(formattedSdkUrl, allowedAttrs) {
+  function htmlDecode(text) {
+    return text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x2F;/g, '/');
+  }
+  function grabQueryParameters() {
+    return window.location.search.substr(1).split('&').reduce(function (acc, param) {
+      const splitParams = param.split('=');
+      const key = splitParams[0];
+      const value = splitParams[1];
+      acc[key] = value;
+      return acc;
+    }, {});
+  }
+  function getSDKScriptAttributes(allAttrs) {
+    const attrs = {};
+    Object.keys(allAttrs).forEach(function (key) {
+      if (allowedAttrs.indexOf(key) > -1 && /^[a-zA-Z0-9.-_=,]*$/.test(allAttrs[key])) {
+        attrs[key] = allAttrs[key];
+      }
+    });
+    return attrs;
+  }
+  const queryParams = grabQueryParameters();
+  const sdkPath = htmlDecode(formattedSdkUrl);
+  let attrs;
+  let sdkQueryParams;
+  if (queryParams.sdkMeta) {
+    let parsedSdkMeta;
+    let clientSideUrl;
+    try {
+      parsedSdkMeta = JSON.parse(atob(decodeURIComponent(queryParams.sdkMeta)));
+      clientSideUrl = parsedSdkMeta.url;
+      attrs = parsedSdkMeta.attrs;
+    } catch (error) {
+      throw new Error('Invalid sdkMeta');
+    }
+    if (!parsedSdkMeta || !clientSideUrl || !attrs) {
+      throw new Error('Invalid sdkMeta');
+    }
+    const a = document.createElement('a');
+    a.href = clientSideUrl;
+    sdkQueryParams = a.search;
+    if (!sdkQueryParams) {
+      throw new Error('Invalid sdkMeta');
+    }
+  } else {
+    attrs = {
+      'data-uid': queryParams.scriptUID
+    };
+    sdkQueryParams = '';
+  }
+  const validAttrs = getSDKScriptAttributes(attrs);
+  const script = document.createElement('script');
+  script.setAttribute('src', sdkPath + sdkQueryParams);
+  script.onload = () => {
+    if (typeof window.onSdkLoad === 'function') {
+      window.onSdkLoad();
+    }
+  };
+  Object.keys(validAttrs).forEach(function (key) {
+    script.setAttribute(key, validAttrs[key]);
+  });
+  document.body.appendChild(script);
+})('https:&#x2F;&#x2F;www.paypal.com&#x2F;sdk&#x2F;js', ["data-amount","data-client-token","data-merchant-id","data-partner-attribution-id","data-enable-3ds","data-sdk-integration-source","data-client-metadata-id","data-uid"])</script><script src="./js" data-partner-attribution-id="Revparts_SP" data-uid="uid_rsuzbblzhumkceqkqkkxpukxpwozpa"></script> <script src="./smart-credit-message@1.79.0.js.download"></script> <script>
+                if (typeof window.crc === 'undefined') {
+                    let script = document.createElement('script');
+                    script.setAttribute('src', 'https://www.paypalobjects.com/upstream/bizcomponents/js/smart-credit-message.js');
+                    script.onload = () => {
+                        if (typeof window.onFallbackLoad() !== 'undefined') {
+                            window.onFallbackLoad();
+                        }
+                    }
+                    document.body.appendChild(script);
+                }
+        </script> <script>
+            var parsedData = JSON.parse(document.firstChild.nodeValue);
+            function initializeComponent() {
+                if (typeof window.xprops !== 'undefined') {
+                    crc.setupMessage(parsedData);
+                } else {
+                    window.onSdkLoad = () => crc.setupMessage(parsedData);
+                }
+            }
+            if (typeof window.crc !== 'undefined') {
+                initializeComponent();
+            } else {
+                window.onFallbackLoad = () => initializeComponent();
+            }
+        </script>
+                    
+                
+            <button type="button" style="display: block; background: transparent; padding: 0px; border: none; outline: none; text-align: left; font-family: inherit; font-size: inherit;"><div class="message"><style class="styles__global">* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    color: #2d2d2d;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    overflow: hidden;
+}
+
+img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.message__logo--svg {
+    position: relative;
+}
+
+.message__logo img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+}
+
+/* IE will not properly scale a SVG element, but will scale a canvas element */
+.message__logo canvas {
+    display: block;
+    width: 100%;
+    visibility: hidden;
+}
+
+/* for screen readers */
+.sr-only {
+    border: 0 !important;
+    clip: rect(1px, 1px, 1px, 1px) !important;
+    -webkit-clip-path: inset(50%) !important;
+    clip-path: inset(50%) !important;
+    height: 1px !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    position: absolute !important;
+    width: 1px !important;
+    white-space: nowrap !important;
+}
+
+button:focus .message__content,
+button:focus .message__content span.br {
+    text-decoration: underline;
+}
+
+.message {
+    display: block;
+    width: 100%;
+    color: #2c2e2f;
+    cursor: pointer;
+}
+
+.message__container {
+    min-width: 100%;
+}
+
+.message__content {
+    display: inline-flex;
+    align-items: center;
+    min-width: 100%;
+}
+
+.message__logo-container {
+    flex: 0 0 auto;
+    width: 70px;
+    margin-right: 0.8rem;
+}
+
+.message__messaging {
+    white-space: normal;
+    position: relative;
+    top: -0.05em;
+    line-height: 1.3;
+}
+
+.message__messaging span.br {
+    white-space: nowrap;
+}
+
+.message__promo-container {
+    display: inline;
+}
+
+.message__headline {
+    display: inline;
+    font-weight: 400;
+    font-size: inherit;
+}
+
+.message__sub-headline {
+    display: none;
+    font-size: inherit;
+}
+
+.message__disclaimer {
+    display: inline;
+    white-space: nowrap;
+    font-weight: 400;
+    font-size: inherit;
+}
+
+.message__disclaimer > span {
+    color: #0070ba;
+    font-weight: 500;
+}
+
+.message__disclaimer > span:not(.multi),
+.message__disclaimer > span.multi:last-of-type {
+    text-decoration: underline;
+}
+
+/* For non-US NI disclaimer */
+.message__disclaimer > span.multi:first-of-type {
+    color: #2c2e2f;
+    font-weight: normal;
+    text-decoration: none;
+}
+
+.message__content {
+    display: inline-block;
+    /* IE does not like flex-direction: column;
+    flex-direction: column;
+    align-items: flex-start; */
+}
+
+.message__logo-container {
+    margin: 0 0 0.2rem 0;
+}
+
+.message__disclaimer > span:not(.multi),
+.message__disclaimer > span.multi:last-of-type {
+    text-decoration: underline;
+}
+</style><style class="styles__locale">.locale--US .message__messaging {
+    top: 0.5px;
+}
+
+.locale--US .message__logo > img {
+    top: 2.9px;
+}
+
+.locale--US .message__messaging {
+    margin-right: 0px;
+    padding-right: 0px;
+}
+</style><style class="styles__mutations">
+    @media (max-width: 223.124px) {
+        .message__disclaimer {
+            display: block;
+        }
+    }
+    
+
+    .message__headline span.multi:nth-child(2) {
+        display: none;
+    }
+
+    @media (min-width: 224.124px) {
+        .message__headline span.multi:first-child {
+            display: none;
+        }
+
+        .message__headline span.multi:nth-child(2) {
+            display: inline;
+        }
+    }
+
+
+                        .message__disclaimer {
+                            display:block;
+                        }
+                        
+.message__logo-container { width: 106.16399999999999px }</style><style class="styles__misc">.message__messaging { min-width: 153.34799999999998px; max-width: 401.06399999999996px }</style><style class="styles__customFont">.message__messaging,
+.message__messaging .message__headline span,
+.message__messaging .message__sub-headline span,
+.message__messaging .message__disclaimer span{ font-size: 12px; }</style><div class="message__container locale--US"><div class="message__foreground"></div><div class="message__content"><div class="message__logo-container" aria-hidden="true"><div class="message__logo message__logo--svg"><img src="./ppc_fc_alt.svg" alt="" role="presentation"><canvas height="80" width="573"></canvas></div></div><div class="message__messaging"><div class="message__promo-container"><div class="message__headline"><span class="tag--xsmall multi"><span class=" br">Buy now. Pay over time.</span></span> <span class="tag--medium multi"><span class=" br">No Interest if paid in full in 6 months</span> <span class="weak br">on PayPal purchases of $149+.</span></span></div> <div class="message__sub-headline"></div></div> <p class="message__disclaimer"><span class="tag--xsmall "><span class=""><span aria-hidden="true">Learn more</span><span class="sr-only"> Learn more</span></span></span></p></div></div><div class="message__background"></div></div></div></button></body></html>
