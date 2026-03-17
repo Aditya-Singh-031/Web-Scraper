@@ -3,17 +3,13 @@ import gzip
 import os
 import csv
 from lxml import etree
-from io import BytesIO
 from typing import List, Set
 from playwright.async_api import async_playwright
 
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
-# -------------------------
-# SITEMAPS (INCLUDING STATIC)
-# -------------------------
 SITEMAPS = [
-    "https://www.kia.parts/sitemaps/sitemap_static_0.xml",  # important
+    "https://www.kia.parts/sitemaps/sitemap_static_0.xml",
 ]
 
 SITEMAPS += [
@@ -28,29 +24,7 @@ SITEMAPS += [
 
 
 # -------------------------
-# FETCH USING BROWSER NETWORK STACK
-# -------------------------
-async def fetch(context, url: str) -> bytes:
-    for attempt in range(5):
-        try:
-            response = await context.request.get(url, timeout=60000)
-
-            if response.status != 200:
-                raise Exception(f"Status {response.status}")
-
-            content = await response.body()
-
-            return content
-
-        except Exception as e:
-            print(f"[retry {attempt+1}] {url} → {e}")
-            await asyncio.sleep(3 + attempt)
-
-    raise Exception(f"Failed: {url}")
-
-
-# -------------------------
-# XML PARSER
+# PARSER
 # -------------------------
 def parse_xml(content: bytes):
     parser = etree.XMLParser(recover=True, ns_clean=True)
@@ -72,12 +46,39 @@ def extract_urls(root) -> List[str]:
 
 
 # -------------------------
-# PROCESS ONE SITEMAP
+# CORE FETCH (NETWORK INTERCEPT)
 # -------------------------
-async def process(context, url):
+async def fetch_via_network(page, url: str) -> bytes:
+    response_data = None
+
+    async def handle_response(response):
+        nonlocal response_data
+        if response.url == url:
+            try:
+                response_data = await response.body()
+            except:
+                pass
+
+    page.on("response", handle_response)
+
+    await page.goto(url, timeout=60000)
+
+    # wait until response captured
+    for _ in range(20):
+        if response_data:
+            return response_data
+        await asyncio.sleep(0.5)
+
+    raise Exception("Failed to capture response")
+
+
+# -------------------------
+# PROCESS
+# -------------------------
+async def process(page, url):
     print(f"Processing: {url}")
 
-    content = await fetch(context, url)
+    content = await fetch_via_network(page, url)
     content = decompress_if_needed(url, content)
 
     root = parse_xml(content)
@@ -96,19 +97,20 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
 
-        # persistent context (important)
         context = await browser.new_context()
+        page = await context.new_page()
+
+        # 🔥 open homepage first (important)
+        await page.goto("https://www.kia.parts/", timeout=60000)
 
         all_urls: Set[str] = set()
 
-        # 🔥 SEQUENTIAL (KEY FIX)
         for url in SITEMAPS:
             try:
-                urls = await process(context, url)
+                urls = await process(page, url)
                 all_urls.update(urls)
 
-                # small delay to avoid detection
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2)  # human delay
 
             except Exception as e:
                 print(f"❌ Skipped {url}: {e}")
