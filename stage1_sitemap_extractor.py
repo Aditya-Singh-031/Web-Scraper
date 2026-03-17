@@ -7,50 +7,57 @@ from lxml import etree
 from io import BytesIO
 from typing import List, Set
 
-
 SITEMAP_INDEX = "https://www.kia.parts/sitemap.xml"
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
+# 🔥 FULL BROWSER HEADERS (CRITICAL)
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Referer": "https://www.kia.parts/",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
 }
 
 
 # -------------------------
-# FETCH
+# FETCH (ANTI-BOT SAFE)
 # -------------------------
 async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
-    for attempt in range(3):
+    for attempt in range(5):
         try:
-            r = await client.get(url, headers=HEADERS, timeout=30)
+            r = await client.get(url)
+
+            if r.status_code == 403:
+                raise Exception("403 Blocked")
+
             r.raise_for_status()
 
             content = r.content
 
-            # 🔥 CRITICAL: ensure we actually got XML
+            # detect HTML block page
             if b"<html" in content[:500].lower():
-                raise ValueError("Received HTML instead of XML (likely blocked)")
+                raise ValueError("Blocked (HTML returned instead of XML)")
 
             return content
 
         except Exception as e:
-            print(f"[retry {attempt+1}] Failed: {url} → {e}")
-            await asyncio.sleep(2)
+            print(f"[retry {attempt+1}] {url} → {e}")
+            await asyncio.sleep(2 + attempt)
 
     raise Exception(f"Failed to fetch sitemap: {url}")
 
 
 # -------------------------
-# XML PARSER (SAFE)
+# XML PARSER
 # -------------------------
 def parse_xml(content: bytes):
-    try:
-        parser = etree.XMLParser(recover=True, ns_clean=True)
-        return etree.fromstring(content, parser=parser)
-    except Exception as e:
-        print("XML parsing failed. Content preview:\n", content[:300])
-        raise e
+    parser = etree.XMLParser(recover=True, ns_clean=True)
+    return etree.fromstring(content, parser=parser)
 
 
 # -------------------------
@@ -79,7 +86,7 @@ def extract_part_urls(root) -> List[str]:
 
 
 # -------------------------
-# PROCESS EACH SITEMAP
+# PROCESS SITEMAP
 # -------------------------
 async def process_sitemap(client, url: str) -> List[str]:
     print(f"Processing: {url}")
@@ -97,7 +104,18 @@ async def process_sitemap(client, url: str) -> List[str]:
 async def main():
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
-    async with httpx.AsyncClient() as client:
+    limits = httpx.Limits(
+        max_connections=20,
+        max_keepalive_connections=10
+    )
+
+    async with httpx.AsyncClient(
+        headers=HEADERS,
+        http2=True,
+        limits=limits,
+        timeout=30,
+        follow_redirects=True
+    ) as client:
 
         print("Fetching main sitemap...")
 
@@ -107,14 +125,13 @@ async def main():
         sitemap_urls = extract_loc_urls(root)
         print(f"Found {len(sitemap_urls)} sitemap files")
 
-        # limit concurrency (important for stability)
         semaphore = asyncio.Semaphore(5)
 
-        async def bounded_process(url):
+        async def bounded(url):
             async with semaphore:
                 return await process_sitemap(client, url)
 
-        tasks = [bounded_process(url) for url in sitemap_urls]
+        tasks = [bounded(url) for url in sitemap_urls]
 
         results = await asyncio.gather(*tasks)
 
