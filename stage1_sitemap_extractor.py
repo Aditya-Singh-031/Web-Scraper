@@ -6,8 +6,14 @@ import time
 from lxml import etree
 from typing import List, Set
 
+DOWNLOAD_DIR = os.path.abspath("downloads")
 OUTPUT_FILE = "data/sitemap_urls.csv"
 
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+# -------------------------
+# SITEMAPS
+# -------------------------
 SITEMAPS = [
     "https://www.kia.parts/sitemaps/sitemap_static_0.xml",
 ]
@@ -22,40 +28,44 @@ SITEMAPS += [
     for i in range(27)
 ]
 
-
+# -------------------------
+# DRIVER
+# -------------------------
 def get_driver():
     options = uc.ChromeOptions()
-    options.headless = False  # IMPORTANT
+
+    prefs = {
+        "download.default_directory": DOWNLOAD_DIR,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True,
+    }
+
+    options.add_experimental_option("prefs", prefs)
+    options.headless = False
 
     driver = uc.Chrome(options=options)
-    driver.get("https://www.kia.parts")
 
-    print("Solve CAPTCHA / wait 5 sec if needed...")
+    driver.get("https://www.kia.parts")
+    print("Wait 5 sec for Cloudflare...")
     time.sleep(5)
 
     return driver
 
 
-def fetch(driver, url):
-    for i in range(5):
-        try:
-            driver.get(url)
-            time.sleep(2)
-
-            content = driver.page_source.encode()
-
-            if "<html" in content[:200].decode().lower() and "urlset" not in content.decode():
-                print(f"[retry {i+1}] Blocked page")
-                continue
-
-            return content
-
-        except Exception as e:
-            print(f"[retry {i+1}] Error:", e)
-
-    raise Exception("Blocked permanently")
+# -------------------------
+# DOWNLOAD
+# -------------------------
+def download_files(driver):
+    for url in SITEMAPS:
+        print("Downloading:", url)
+        driver.get(url)
+        time.sleep(2)  # allow download
 
 
+# -------------------------
+# PARSE FILES
+# -------------------------
 def parse_xml(content: bytes):
     parser = etree.XMLParser(recover=True)
     return etree.fromstring(content, parser)
@@ -69,24 +79,20 @@ def extract_urls(root) -> List[str]:
     ]
 
 
-def main():
-    os.makedirs("data", exist_ok=True)
-
-    driver = get_driver()
-
+def process_downloads():
     all_urls: Set[str] = set()
 
-    for url in SITEMAPS:
-        print("Processing:", url)
+    for file in os.listdir(DOWNLOAD_DIR):
+        path = os.path.join(DOWNLOAD_DIR, file)
+
+        print("Processing file:", file)
 
         try:
-            content = fetch(driver, url)
+            with open(path, "rb") as f:
+                content = f.read()
 
-            if url.endswith(".gz"):
-                try:
-                    content = gzip.decompress(content)
-                except:
-                    print("⚠️ Not gzipped")
+            if file.endswith(".gz"):
+                content = gzip.decompress(content)
 
             root = parse_xml(content)
             urls = extract_urls(root)
@@ -96,17 +102,36 @@ def main():
             all_urls.update(urls)
 
         except Exception as e:
-            print("❌ Failed:", url)
+            print("❌ Failed:", file, e)
+
+    return all_urls
+
+
+# -------------------------
+# MAIN
+# -------------------------
+def main():
+    os.makedirs("data", exist_ok=True)
+
+    driver = get_driver()
+
+    # Step 1: download all files
+    download_files(driver)
 
     driver.quit()
 
-    print("\nTotal:", len(all_urls))
+    print("\nParsing downloaded files...")
+
+    # Step 2: parse files
+    all_urls = process_downloads()
+
+    print("\nTotal URLs:", len(all_urls))
 
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["url"])
-        for u in sorted(all_urls):
-            writer.writerow([u])
+        for url in sorted(all_urls):
+            writer.writerow([url])
 
     print("Saved →", OUTPUT_FILE)
 
