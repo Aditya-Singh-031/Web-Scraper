@@ -81,6 +81,7 @@ async def fetch_with_playwright(url: str) -> bytes:
 
 async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
     """Fetch content with retries"""
+    global fetch_with_playwright
     for attempt in range(3):
         try:
             headers = {
