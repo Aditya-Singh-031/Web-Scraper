@@ -118,7 +118,10 @@ def main():
     # Step 1: download all files
     download_files(driver)
 
-    driver.quit()
+    try:
+        driver.quit()
+    except:
+        pass
 
     print("\nParsing downloaded files...")
 
