@@ -1,4 +1,4 @@
-import undetected_chromedriver as uc
+import undetected_chromedriver as uc # type: ignore
 import gzip
 import csv
 import os
