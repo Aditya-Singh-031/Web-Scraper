@@ -52,7 +52,6 @@ def extract_product(driver, url):
         "part_number": part_number,
     }
 
-
 # -------------------------
 # MAIN
 # -------------------------
