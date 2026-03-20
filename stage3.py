@@ -1,5 +1,5 @@
 import undetected_chromedriver as uc
-import pandas as pd
+import pandas as pd # pyright: ignore[reportMissingModuleSource]
 import time
 
 INPUT_FILE = "data/sitemap_urls.csv"
