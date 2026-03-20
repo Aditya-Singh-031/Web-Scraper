@@ -73,7 +73,10 @@ def main():
         except Exception as e:
             print("❌ error:", e)
 
-    driver.quit()
+    try:
+        driver.quit()
+    except:
+        pass
 
     pd.DataFrame(results).to_csv(OUTPUT_FILE, index=False)
 
