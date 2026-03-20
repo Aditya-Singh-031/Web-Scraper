@@ -1,7 +1,7 @@
 import undetected_chromedriver as uc
 import csv
 import time
-import pandas as pd
+import pandas as pd # pyright: ignore[reportMissingModuleSource]
 
 INPUT_FILE = "data/sitemap_urls.csv"
 OUTPUT_FILE = "data/products_sample.csv"
@@ -23,6 +23,8 @@ def get_driver():
 # -------------------------
 # EXTRACT
 # -------------------------
+import re
+
 def extract_product(driver, url):
     driver.get(url)
     time.sleep(2)
@@ -37,12 +39,11 @@ def extract_product(driver, url):
     except:
         price = ""
 
-    try:
-        part_number = driver.find_element(
-            "xpath", "//*[contains(text(),'Part Number')]/following::*[1]"
-        ).text
-    except:
-        part_number = ""
+    # ✅ Extract part number from title
+    part_number = ""
+    match = re.search(r"\((.*?)\)", name)
+    if match:
+        part_number = match.group(1)
 
     return {
         "url": url,
