@@ -81,39 +81,48 @@ def extract_fitment(driver):
 # -------------------------
 def main():
     df = pd.read_csv(INPUT_FILE)
-    urls = df["url"].head(50)  # start smaller
+    urls = df["url"].head(50)
 
-    driver = get_driver()
-
+    BATCH_SIZE = 10
     results = []
 
-    for i, url in enumerate(urls):
-        print(f"{i+1}/50 → {url}")
+    for batch_start in range(0, len(urls), BATCH_SIZE):
+        batch = urls[batch_start: batch_start + BATCH_SIZE]
 
+        print(f"\n🚀 Starting batch {batch_start // BATCH_SIZE + 1}")
+
+        driver = get_driver()
+
+        for i, url in enumerate(batch):
+            global_index = batch_start + i + 1
+            print(f"{global_index}/{len(urls)} → {url}")
+
+            try:
+                driver.get(url)
+                time.sleep(2)
+
+                name, price = extract_basic(driver)
+                fitment = extract_fitment(driver)
+
+                results.append({
+                    "url": url,
+                    "name": name,
+                    "price": price,
+                    "fitment": fitment
+                })
+
+            except Exception as e:
+                print("❌ error:", e)
+
+        # 🔴 IMPORTANT: close after batch
         try:
-            driver.get(url)
-            time.sleep(2)
+            driver.quit()
+        except:
+            pass
 
-            name, price = extract_basic(driver)
-            fitment = extract_fitment(driver)
-
-            results.append({
-                "url": url,
-                "name": name,
-                "price": price,
-                "fitment": fitment
-            })
-
-        except Exception as e:
-            print("❌ error:", e)
-
-    try:
-        driver.quit()
-    except:
-        pass
+        time.sleep(2)  # cooldown
 
     pd.DataFrame(results).to_csv(OUTPUT_FILE, index=False)
-
     print("Saved →", OUTPUT_FILE)
 
 
